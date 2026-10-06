@@ -1,0 +1,92 @@
+services:
+  db:
+    image: mysql:8.4
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: datasifter
+      MYSQL_USER: ${DATASIFTER_DB_USERNAME:?Set DATASIFTER_DB_USERNAME}
+      MYSQL_PASSWORD: ${DATASIFTER_DB_PASSWORD:?Set DATASIFTER_DB_PASSWORD}
+      MYSQL_ROOT_PASSWORD: ${DATASIFTER_DB_ROOT_PASSWORD:?Set DATASIFTER_DB_ROOT_PASSWORD}
+    volumes:
+      - mysql-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  api:
+    build:
+      context: ../backend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment: &app-environment
+      DATASIFTER_DB_URL: jdbc:mysql://db:3306/datasifter?serverTimezone=UTC
+      DATASIFTER_DB_USERNAME: ${DATASIFTER_DB_USERNAME:?Set DATASIFTER_DB_USERNAME}
+      DATASIFTER_DB_PASSWORD: ${DATASIFTER_DB_PASSWORD:?Set DATASIFTER_DB_PASSWORD}
+      DATASIFTER_SECURITY_ADMIN_USERNAME: ${DATASIFTER_SECURITY_ADMIN_USERNAME:?Set DATASIFTER_SECURITY_ADMIN_USERNAME}
+      DATASIFTER_SECURITY_ADMIN_PASSWORD: ${DATASIFTER_SECURITY_ADMIN_PASSWORD:?Set DATASIFTER_SECURITY_ADMIN_PASSWORD}
+      DATASIFTER_VAULT_PROVIDER: ${DATASIFTER_VAULT_PROVIDER:?Set the managed VaultKeyProvider SPI id}
+      DATASIFTER_VAULT_REQUIRE_MANAGED_PROVIDER: "true"
+      DATASIFTER_STORAGE_PROVIDER: ${DATASIFTER_STORAGE_PROVIDER:?Set the shared WorkflowFileStore SPI id}
+      DATASIFTER_STORAGE_REQUIRE_DISTRIBUTED_PROVIDER: "true"
+      DATASIFTER_VAULT_PASSPHRASE: ${DATASIFTER_VAULT_PASSPHRASE:-}
+      DATASIFTER_WORKER_TOKEN: ${DATASIFTER_WORKER_TOKEN:?Set DATASIFTER_WORKER_TOKEN}
+      DATASIFTER_DATA_DIRECTORY: /var/lib/datasifter
+      DATASIFTER_STORAGE_LOCAL_DIRECTORY: /var/lib/datasifter
+      DATASIFTER_WORKER_ENABLED: "false"
+    volumes:
+      - datasifter-state:/var/lib/datasifter
+      - ${DATASIFTER_PLUGIN_DIRECTORY:?Set DATASIFTER_PLUGIN_DIRECTORY}:/opt/datasifter/plugins:ro
+    expose:
+      - "8080"
+
+  worker:
+    build:
+      context: ../backend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    command: ["--server.port=-1"]
+    environment:
+      <<: *app-environment
+      DATASIFTER_WORKER_ENABLED: "true"
+      DATASIFTER_WORKER_ID: worker
+    volumes:
+      - datasifter-state:/var/lib/datasifter
+      - ${DATASIFTER_PLUGIN_DIRECTORY:?Set DATASIFTER_PLUGIN_DIRECTORY}:/opt/datasifter/plugins:ro
+
+  frontend:
+    build:
+      context: ../frontend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    expose:
+      - "8080"
+
+  https-proxy:
+    image: caddy:2
+    restart: unless-stopped
+    depends_on:
+      - api
+      - frontend
+    environment:
+      DATASIFTER_DOMAIN: ${DATASIFTER_DOMAIN:?Set DATASIFTER_DOMAIN to a public DNS name}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+
+volumes:
+  mysql-data:
+  datasifter-state:
+  caddy-data:
+  caddy-config:

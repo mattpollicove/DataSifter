@@ -1,0 +1,16 @@
+spring:
+  datasource:
+    url: jdbc:h2:mem:datasifter;MODE=MySQL;DB_CLOSE_DELAY=-1
+    driver-class-name: org.h2.Driver
+    username: sa
+    password: ""
+  flyway:
+    enabled: true
+
+datasifter:
+  persistence:
+    import-json-on-startup: false
+  workers:
+    shared-token: test-worker-token
+  jobs:
+    recovery-enabled: false

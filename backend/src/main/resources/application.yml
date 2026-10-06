@@ -1,0 +1,28 @@
+spring:
+  application:
+    name: datasifter
+  datasource:
+    url: ${DATASIFTER_DB_URL:jdbc:mysql://localhost:3306/datasifter?serverTimezone=UTC}
+    username: ${DATASIFTER_DB_USERNAME}
+    password: ${DATASIFTER_DB_PASSWORD}
+    hikari:
+      maximum-pool-size: ${DATASIFTER_DB_POOL_SIZE:10}
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+
+server:
+  port: 8080
+
+datasifter:
+  persistence:
+    import-json-on-startup: ${DATASIFTER_IMPORT_JSON_STATE:false}
+  workers:
+    shared-token: ${DATASIFTER_WORKER_TOKEN:}
+  jobs:
+    max-retries: ${DATASIFTER_JOB_MAX_RETRIES:3}
+    retry-base-delay: ${DATASIFTER_JOB_RETRY_BASE_DELAY:5s}
+    retry-max-delay: ${DATASIFTER_JOB_RETRY_MAX_DELAY:5m}
+    worker-lease: ${DATASIFTER_WORKER_LEASE:60s}
+    recovery-enabled: ${DATASIFTER_JOB_RECOVERY_ENABLED:true}
+    recovery-interval-ms: ${DATASIFTER_JOB_RECOVERY_INTERVAL_MS:5000}

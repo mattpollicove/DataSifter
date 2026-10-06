@@ -1,0 +1,7 @@
+datasifter:
+  persistence:
+    import-json-on-startup: false
+  workers:
+    shared-token: test-worker-token
+  jobs:
+    recovery-enabled: false
