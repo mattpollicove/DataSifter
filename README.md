@@ -1,4 +1,5 @@
 # DataSifter
+data synchronization and transformation tool
 
 DataSifter is a Java + React control-plane MVP built from the specification in `spec.md`. The app includes a Spring Boot backend with service-backed local state, portable JSON persistence, encrypted-at-rest secret storage, and a dashboard that models the workflow orchestration, connector health, mapping editor, KeyVault, and audit views described in the design.
 
