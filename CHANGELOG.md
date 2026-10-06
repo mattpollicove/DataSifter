@@ -16,6 +16,7 @@
 - Added storage path-traversal checks and tests for opaque local upload references, JDBC-source processing, managed key-provider encryption, and LDAP TLS policy.
 - Updated shell and PowerShell file agents to upload file contents to a selected workflow.
 - Added Linux, Windows, and macOS CI validation, tag-gated release artifact packaging, and a cross-platform smoke checklist.
+- Extended the Linux integration smoke to exercise Vault Transit with a scoped token and S3-compatible CSV upload/readback against ephemeral services.
 - Added security, vault rotation, workflow persistence, and CSV-to-JDBC processing test coverage.
 - Added a shared-token-authenticated worker API with durable database-backed job claims, heartbeats, completion/failure reporting, retry backoff, and expired-lease recovery.
 - Added configurable job retry and worker lease policies with defaults of three retries and a 60-second lease.
@@ -34,6 +35,7 @@
 
 ### Changed
 - Renamed the application identity, Java packages, runtime configuration, deployment variables, container artifacts, and documentation from NexusSync to DataSifter; added a non-destructive migration guide.
+- Pinned Flyway 11.20.3 instead of Spring Boot's older managed Flyway version to align migration tooling with the MySQL 8.4 production and CI target.
 - The control-plane UI now requires sign-in, keeps Basic credentials in memory, hides role-restricted screens, and persists workflow canvas/mapping changes through the API.
 - Vault startup now requires a configured passphrase; legacy key material remains available only to decrypt pre-migration ciphertext and must be backed up through the documented transition.
 - Configured Maven Surefire to load Mockito as a Java agent for Java 25 test runs, avoiding Mockito's dynamic self-attachment.

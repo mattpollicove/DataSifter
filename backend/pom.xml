@@ -19,6 +19,7 @@
     <properties>
         <java.version>25</java.version>
         <aws.sdk.version>2.55.11</aws.sdk.version>
+        <flyway.version>11.20.3</flyway.version>
     </properties>
 
     <dependencies>

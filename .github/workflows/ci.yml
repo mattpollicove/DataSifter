@@ -62,7 +62,7 @@ jobs:
         run: docker build -t datasifter/frontend:ci -f frontend/Dockerfile frontend
 
   mysql-smoke:
-    name: Verify MySQL migrations and API startup
+    name: Verify MySQL and managed provider integration
     needs: validate
     runs-on: ubuntu-latest
     services:
@@ -89,19 +89,128 @@ jobs:
           cache: maven
       - name: Package backend
         run: mvn -B -f backend/pom.xml -DskipTests package
-      - name: Start API and verify MySQL schema
+      - name: Start API and verify managed provider integration
         env:
           DATASIFTER_DB_URL: jdbc:mysql://127.0.0.1:3306/datasifter?serverTimezone=UTC
           DATASIFTER_DB_USERNAME: datasifter
           DATASIFTER_DB_PASSWORD: ci-db-password
           DATASIFTER_SECURITY_ADMIN_USERNAME: ci-admin
           DATASIFTER_SECURITY_ADMIN_PASSWORD: ci-phase-one-admin-password
-          DATASIFTER_VAULT_PASSPHRASE: ci-phase-one-vault-passphrase
+          DATASIFTER_WORKER_TOKEN: ci-phase-one-worker-token
+          DATASIFTER_VAULT_PROVIDER: hashicorp-vault-transit
+          DATASIFTER_VAULT_REQUIRE_MANAGED_PROVIDER: 'true'
+          DATASIFTER_VAULT_TRANSIT_ADDRESS: http://127.0.0.1:8200
+          DATASIFTER_VAULT_TRANSIT_ALLOW_HTTP_LOCAL: 'true'
+          DATASIFTER_VAULT_TRANSIT_KEY: datasifter-ci
+          DATASIFTER_STORAGE_PROVIDER: s3-compatible
+          DATASIFTER_STORAGE_REQUIRE_DISTRIBUTED_PROVIDER: 'true'
+          DATASIFTER_STORAGE_S3_ENDPOINT: http://127.0.0.1:9000
+          DATASIFTER_STORAGE_S3_ALLOW_HTTP_LOCAL: 'true'
+          DATASIFTER_STORAGE_S3_REGION: us-east-1
+          DATASIFTER_STORAGE_S3_BUCKET: datasifter-ci
           DATASIFTER_DATA_DIRECTORY: ${{ runner.temp }}/datasifter-phase1
         run: |
-          java -jar backend/target/datasifter-backend-0.0.1-SNAPSHOT.jar > "$RUNNER_TEMP/datasifter-mysql-smoke.log" 2>&1 &
+          set -euo pipefail
+          vault_container=datasifter-ci-vault
+          storage_container=datasifter-ci-rustfs
+          smoke_network=datasifter-ci-network
+          app_pid=
+          api_log="$RUNNER_TEMP/datasifter-provider-smoke.log"
+          smoke_completed=false
+          cleanup() {
+            if [ -n "$app_pid" ]; then
+              kill "$app_pid" 2>/dev/null || true
+              wait "$app_pid" 2>/dev/null || true
+            fi
+            if [ "$smoke_completed" != true ] && [ -f "$api_log" ]; then
+              tail -n 80 "$api_log"
+            fi
+            docker stop "$vault_container" "$storage_container" >/dev/null 2>&1 || true
+            docker network rm "$smoke_network" >/dev/null 2>&1 || true
+          }
+          trap cleanup EXIT
+
+          vault_root_token="$(openssl rand -hex 32)"
+          storage_access_key="ds$(openssl rand -hex 12)"
+          storage_secret_key="$(openssl rand -hex 32)"
+          printf '::add-mask::%s\n' "$vault_root_token"
+          printf '::add-mask::%s\n' "$storage_access_key"
+          printf '::add-mask::%s\n' "$storage_secret_key"
+
+          docker network create "$smoke_network" >/dev/null
+          docker run --detach --rm --name "$vault_container" \
+            --network "$smoke_network" \
+            --publish 127.0.0.1:8200:8200 \
+            --cap-add=IPC_LOCK \
+            --env "VAULT_DEV_ROOT_TOKEN_ID=$vault_root_token" \
+            hashicorp/vault:1.20.4 server -dev \
+            -dev-listen-address=0.0.0.0:8200 \
+            "-dev-root-token-id=$vault_root_token" >/dev/null
+          docker run --detach --rm --name "$storage_container" \
+            --network "$smoke_network" \
+            --publish 127.0.0.1:9000:9000 \
+            --env "RUSTFS_ACCESS_KEY=$storage_access_key" \
+            --env "RUSTFS_SECRET_KEY=$storage_secret_key" \
+            --env RUSTFS_ADDRESS=0.0.0.0:9000 \
+            rustfs/rustfs:1.0.1 server >/dev/null
+
+          vault_ready=false
+          for attempt in $(seq 1 45); do
+            if curl --fail --silent http://127.0.0.1:8200/v1/sys/health >/dev/null; then
+              vault_ready=true
+              break
+            fi
+            sleep 2
+          done
+          if [ "$vault_ready" != true ]; then
+            docker logs "$vault_container"
+            exit 1
+          fi
+
+          vault_admin=(docker exec --env VAULT_ADDR=http://127.0.0.1:8200 --env "VAULT_TOKEN=$vault_root_token" "$vault_container" vault)
+          "${vault_admin[@]}" secrets enable transit
+          "${vault_admin[@]}" write -f transit/keys/datasifter-ci
+          cat <<'POLICY' | docker exec --interactive "$vault_container" sh -c 'cat > /tmp/datasifter-ci-policy.hcl'
+          path "transit/keys/datasifter-ci" {
+            capabilities = ["read"]
+          }
+          path "transit/encrypt/datasifter-ci" {
+            capabilities = ["update"]
+          }
+          path "transit/decrypt/datasifter-ci" {
+            capabilities = ["update"]
+          }
+          POLICY
+          "${vault_admin[@]}" policy write datasifter-ci /tmp/datasifter-ci-policy.hcl
+          vault_token="$("${vault_admin[@]}" token create -no-default-policy -policy=datasifter-ci -ttl=1h -field=token)"
+          printf '::add-mask::%s\n' "$vault_token"
+          export DATASIFTER_VAULT_TRANSIT_TOKEN="$vault_token"
+
+          s3_endpoint="http://$storage_container:9000"
+          aws_cli() {
+            docker run --rm --network "$smoke_network" \
+              --env "AWS_ACCESS_KEY_ID=$storage_access_key" \
+              --env "AWS_SECRET_ACCESS_KEY=$storage_secret_key" \
+              --env AWS_DEFAULT_REGION=us-east-1 \
+              amazon/aws-cli:2.37.9 "$@" --endpoint-url "$s3_endpoint"
+          }
+          bucket_ready=false
+          for attempt in $(seq 1 45); do
+            if aws_cli s3api create-bucket --bucket "$DATASIFTER_STORAGE_S3_BUCKET" >/dev/null 2>&1; then
+              bucket_ready=true
+              break
+            fi
+            sleep 2
+          done
+          if [ "$bucket_ready" != true ]; then
+            docker logs "$storage_container"
+            exit 1
+          fi
+          export DATASIFTER_STORAGE_S3_ACCESS_KEY="$storage_access_key"
+          export DATASIFTER_STORAGE_S3_SECRET_KEY="$storage_secret_key"
+
+          java -jar backend/target/datasifter-backend-0.0.1-SNAPSHOT.jar > "$api_log" 2>&1 &
           app_pid=$!
-          trap 'kill "$app_pid" 2>/dev/null || true' EXIT
           ready=false
           for attempt in $(seq 1 60); do
             if curl --fail --silent http://127.0.0.1:8080/actuator/health > /dev/null; then
@@ -111,11 +220,61 @@ jobs:
             sleep 2
           done
           if [ "$ready" != true ]; then
-            cat "$RUNNER_TEMP/datasifter-mysql-smoke.log"
             exit 1
           fi
           test "$(MYSQL_PWD=ci-db-password mysql --host=127.0.0.1 --user=datasifter datasifter --batch --skip-column-names -e "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'datasifter' AND table_name IN ('workflows', 'connectors', 'job_executions', 'audit_entries', 'key_vault_secrets', 'datasifter_metadata', 'flyway_schema_history')")" = "7"
-          curl --fail --silent --show-error --user ci-admin:ci-phase-one-admin-password http://127.0.0.1:8080/api/session
+
+          api=http://127.0.0.1:8080
+          auth=ci-admin:ci-phase-one-admin-password
+          cookie_jar="$RUNNER_TEMP/datasifter-provider-smoke-cookies.txt"
+          touch "$cookie_jar"
+          refresh_csrf() {
+            csrf_json="$(curl --fail --silent --show-error --user "$auth" \
+              --cookie "$cookie_jar" --cookie-jar "$cookie_jar" "$api/api/csrf")"
+            csrf_token="$(printf '%s' "$csrf_json" | jq --exit-status --raw-output '.token')"
+          }
+
+          refresh_csrf
+          secret_response="$(curl --fail --silent --show-error --user "$auth" \
+            --cookie "$cookie_jar" --cookie-jar "$cookie_jar" \
+            --header "X-XSRF-TOKEN: $csrf_token" \
+            --header 'Content-Type: application/json' \
+            --data '{"name":"ci-provider-probe","type":"test","value":"transit-round-trip-secret-6789"}' \
+            "$api/api/keyvault")"
+          test "$(printf '%s' "$secret_response" | jq --exit-status --raw-output '.value | endswith("6789")')" = true
+          secret_id="$(printf '%s' "$secret_response" | jq --exit-status --raw-output '.id')"
+          secret_list="$(curl --fail --silent --show-error --user "$auth" "$api/api/keyvault")"
+          test "$(printf '%s' "$secret_list" | jq --exit-status --arg id "$secret_id" \
+            '.[] | select(.id == $id) | .value | endswith("6789")')" = true
+
+          refresh_csrf
+          workflow_response="$(curl --fail --silent --show-error --user "$auth" \
+            --cookie "$cookie_jar" --cookie-jar "$cookie_jar" \
+            --header "X-XSRF-TOKEN: $csrf_token" \
+            --header 'Content-Type: application/json' \
+            --data '{"name":"Managed provider smoke","owner":"ci-admin"}' \
+            "$api/api/workflows")"
+          workflow_id="$(printf '%s' "$workflow_response" | jq --exit-status --raw-output '.id')"
+          csv_file="$RUNNER_TEMP/provider-smoke.csv"
+          printf 'id,name\n1,phase-one-smoke\n' > "$csv_file"
+          refresh_csrf
+          upload_response="$(curl --fail --silent --show-error --user "$auth" \
+            --cookie "$cookie_jar" --cookie-jar "$cookie_jar" \
+            --header "X-XSRF-TOKEN: $csrf_token" \
+            --form "file=@$csv_file;type=text/csv" \
+            "$api/api/workflows/$workflow_id/csv")"
+          test "$(printf '%s' "$upload_response" | jq --exit-status --raw-output '.status')" = ready
+          workflow_detail="$(curl --fail --silent --show-error --user "$auth" \
+            "$api/api/workflow/$workflow_id")"
+          test "$(printf '%s' "$workflow_detail" | jq --exit-status --raw-output '.sourceCsvReady')" = true
+
+          object_list="$(aws_cli s3api list-objects-v2 --bucket "$DATASIFTER_STORAGE_S3_BUCKET")"
+          object_key="$(printf '%s' "$object_list" | jq --exit-status --raw-output '.Contents[0].Key')"
+          test -n "$object_key"
+          downloaded_csv="$(aws_cli s3 cp "s3://$DATASIFTER_STORAGE_S3_BUCKET/$object_key" - --no-progress)"
+          test "$downloaded_csv" = "$(cat "$csv_file")"
+          smoke_completed=true
+          echo "MySQL migration, Vault Transit encrypt/decrypt, and S3 upload/read checks passed."
 
   release-artifacts:
     name: Assemble release artifacts

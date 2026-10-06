@@ -2,10 +2,10 @@
 
 ## Automated gates
 
-- Require `Validate` to pass on Ubuntu, Windows, and macOS, along with the MySQL smoke and container packaging jobs, before release.
+- Require `Validate` to pass on Ubuntu, Windows, and macOS, along with the managed-provider smoke and container packaging jobs, before release.
 - The job compiles and tests the Java 25 backend, then installs the locked frontend dependencies and runs lint and production build checks.
-- A `v*` tag assembles the backend JAR and frontend `dist` directory only after the cross-platform, container, and MySQL migration checks pass.
-- The MySQL smoke job starts the production-profile API against MySQL 8.4, verifies both Flyway migrations created the expected schema, and checks authenticated session access. This is not a substitute for production backup/restore rehearsal.
+- A `v*` tag assembles the backend JAR and frontend `dist` directory only after the cross-platform, container, and managed-provider migration checks pass.
+- The provider smoke job starts the production-profile API against MySQL 8.4 with Flyway 11.20.3, Vault Transit, and RustFS; it verifies migrations, scoped Transit encrypt/decrypt, authenticated workflow creation, CSV upload, and an object-store readback from a separate container. This is not a substitute for production backup/restore rehearsal.
 
 ## Configuration and deployment smoke checks
 

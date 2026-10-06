@@ -14,3 +14,5 @@
 - 2026-10-06T12:03:05-04:00 — "work on all five of these objectives" (implemented the selected scope for API/vault security, embedded CSV-to-JDBC execution, persisted workflows/mappings, and cross-platform CI/release gates)
 - 2026-10-06T12:25:00-04:00 — "address these ... Then I think we are ready to talk about github" (selected Phase 1 production core; chose cloud-neutral pluggable managed-key and shared-storage adapters, separate workers, CSV/JDBC/LDAPS connectors, and streaming transforms)
 - 2026-10-06T14:25:47-04:00 — "update the name of this application, documentation, and code references from nexussync to DataSifter. I will rename the windows folder manually" (completed application identity/configuration rename and documented data migration; left the Windows project folder untouched)
+- 2026-10-06T16:22:00-04:00 — "continue to work on remaining gaps and risks" (confirmed Flyway 11.20.3 alignment for MySQL 8.4, after explicit approval to update the dependency and run builds/tests)
+- 2026-10-06T16:26:00-04:00 — "Add live Vault/S3 provider integration to GitHub CI" (selected automated managed-provider smoke coverage as the next Phase 1 release-risk task)

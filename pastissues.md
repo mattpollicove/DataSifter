@@ -1,5 +1,18 @@
 # DataSifter Past Issues
 
+## 2026-10-06 | Flyway's managed version lagged behind the MySQL 8.4 target
+
+- Description: Starting the production-profile application against MySQL 8.4 succeeded, but Flyway warned that the server version exceeded its latest tested MySQL version.
+- Root cause: Spring Boot 3.5.16 managed Flyway 11.7.2, whose MySQL support metadata did not yet include the project's MySQL 8.4 target.
+- Solution: Pinned Flyway 11.20.3 through Spring Boot's `flyway.version` property so `flyway-core` and `flyway-mysql` stay on the same release line; the MySQL 8.4 migration smoke remains a release gate.
+- Affected files:
+  - `backend/pom.xml`
+  - `Docs/RELEASE_CHECKLIST.md`
+  - `.github/workflows/ci.yml`
+- Prevention notes:
+  - Keep the Flyway version aligned with the production MySQL version and validate migrations against the exact target database release in CI.
+  - Reassess Flyway support before changing the MySQL major/minor target.
+
 ## 2026-10-06 | Incomplete application identity rename
 
 - Description: The initial DataSifter rename changed several top-level names but left legacy Spring property prefixes, deployment environment-variable names, a custom drag-and-drop MIME type, and the generated backend JAR glob inconsistent.
