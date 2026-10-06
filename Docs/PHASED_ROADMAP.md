@@ -20,8 +20,8 @@ This phase is the minimum gate before the project can be treated as a production
 - Durable database job claiming with expiring worker leases, authenticated worker heartbeats, retry/backoff, and automatic recovery of expired leases.
 - Shared-token worker API for claiming jobs, reporting progress, completing/failing work, and checking active worker lease health.
 - Standalone worker runtime: the same backend artifact can run in a separate JVM/container with its web port disabled and worker polling enabled; multiple worker replicas use the shared MySQL lease queue.
-- Pluggable `WorkflowFileStore` adapter with a managed-local filesystem implementation for development/single-host use. Production startup can require an external shared object-storage provider and fails closed if it is missing.
-- Pluggable `VaultKeyProvider` envelope-encryption contract for provider-managed key wrapping and rotation; production startup can require a provider and fails closed if it is missing. No cloud-vendor adapter is bundled.
+- Pluggable `WorkflowFileStore` contract with a local development implementation and a built-in S3-compatible provider for shared object storage. Production startup requires shared storage.
+- Pluggable `VaultKeyProvider` contract with a local development implementation and a built-in HashiCorp Vault Transit provider for envelope-key wrapping. Production startup requires the managed provider.
 - Container deployment definition with separate API and worker services, private MySQL networking, shared local state for single-host operation, and Caddy-managed HTTPS ingress.
 - Streamed CSV, forward-only JDBC source queries (MySQL/PostgreSQL drivers), and paged LDAPS sources to MySQL/PostgreSQL targets; target values use parameterized batches and strict identifier checks.
 - Heap-aware bounded JDBC insert batching; LDAP results are paged. Field transforms include trim/lowercase/uppercase and privacy actions include mask, SHA-256, vault-backed encryption, and drop.
@@ -35,7 +35,7 @@ This phase is the minimum gate before the project can be treated as a production
 ### Exit criteria
 - Workflow orchestration runs through a durable queue with recoverable state.
 - Worker heartbeats/recovery semantics are tested; run workers as separate replicas against the MySQL queue and configure only workflows with validated targets.
-- The production compose profile requires a `VaultKeyProvider` plugin and shared `WorkflowFileStore` plugin. These interfaces and startup gates are implemented, but provider-specific plugins and live cloud/KMS/object-store validation remain release blockers.
+- The production compose profile selects the built-in Vault Transit and S3-compatible providers and requires their external services. Provisioning the key, bucket, permissions, TLS trust, and live staging validation remain release blockers.
 - The local filesystem adapter is single-host only. Multi-host workers require an installed shared object-store adapter; a shared Docker named volume is not a multi-host storage solution.
 - LDAPS certificate verification uses the JVM trust store; production deployments must provision and validate the directory CA chain.
 - Release CI and a cross-platform smoke checklist are in place; actual CI and container-release runs must pass before publishing.
@@ -51,7 +51,7 @@ This phase moves the platform from internal MVP toward enterprise-class deployme
 - Add versioned workflow templates and change approvals.
 - Add immutable audit evidence and long-term retention.
 - Add stronger operational dashboards and alerting.
-- Complete vendor adapters for managed key custody and shared object storage; certify key-version rotation and data-recovery behavior against the selected provider.
+- Expand provider integrations as needed and certify key-version rotation and data-recovery behavior against the selected production deployment.
 
 ### Exit criteria
 - Multiple environments are supported with separate secrets, policies, and execution data.

@@ -4,15 +4,17 @@
 
 1. Copy `deploy/.env.example` to a deployment-only `deploy/.env` file and replace every sample value with generated credentials. Restrict file permissions; never commit the populated file.
 2. Create distinct high-entropy admin and worker credentials. Optional role users must be separately provisioned. The worker token is not a human password.
-3. Install and register an approved `VaultKeyProvider` and shared `WorkflowFileStore` plugin under `DATASIFTER_PLUGIN_DIRECTORY`. Set their exact provider IDs. The production Compose stack requires both and fails startup when the providers are absent.
+3. Provision a HashiCorp Vault Transit key and an S3-compatible bucket reachable over HTTPS. The production Compose stack selects the built-in `hashicorp-vault-transit` and `s3-compatible` providers and fails startup if either service or its configuration is unavailable. Create secret files for a least-privilege Vault token and S3 access/secret keys, then set the corresponding `*_SECRET_FILE` paths in `deploy/.env`. Keep those files outside version control; `deploy/secrets/` is ignored.
+   - Grant the Vault token `read` on `transit/keys/<key>` and `update` on `transit/encrypt/<key>` and `transit/decrypt/<key>`. A Vault Agent may maintain the mounted token file; the provider rereads it for each Transit operation.
+   - Grant the S3 identity bucket-list access for startup readiness plus object get/put/delete access only to the configured bucket. Configure server-side encryption and lifecycle/backup policy at the object store.
 4. Supply `DATASIFTER_DB_URL`, `DATASIFTER_DB_USERNAME`, and `DATASIFTER_DB_PASSWORD` from the approved secret store. Restrict database access to the API and workers; use TLS if the database is not on a trusted single-host network.
-5. Point `DATASIFTER_DOMAIN` at the deployment, then run:
+5. Point `DATASIFTER_DOMAIN` at the deployment and set `DATASIFTER_VAULT_TRANSIT_ADDRESS`, `DATASIFTER_VAULT_TRANSIT_KEY`, `DATASIFTER_STORAGE_S3_ENDPOINT`, and `DATASIFTER_STORAGE_S3_BUCKET`. Ensure the certificates for both HTTPS endpoints are trusted by the Java runtime. Then run:
 
    ```text
    docker compose --env-file deploy/.env -f deploy/docker-compose.yml up --build
    ```
 
-   Caddy is the only public service. Confirm the certificate is valid and renewed automatically, `GET /actuator/health` responds without exposing details, and authenticated `GET /api/session` succeeds. Never expose the API, worker, frontend, or database ports directly to the public network.
+   Caddy is the only public service. Confirm the certificate is valid and renewed automatically, `GET /actuator/health` responds without exposing details, and authenticated `GET /api/session` succeeds. Verify a secret write/read after Transit key rotation and upload/read/delete of a workflow file across API and worker hosts. Never expose the API, worker, frontend, Vault, object store, or database ports directly to the public network.
 
 ## Backup and restore
 
@@ -42,5 +44,6 @@ The provider interfaces do not automatically migrate data between providers. Mov
 ## Operational limits
 
 - A shared Docker named volume supports replicas on one Docker host only. Multi-host workers require a provider offering shared durable object storage and an orchestrator that mounts the same provider plugin/configuration into all replicas.
+- Vault Transit tokens may be refreshed through the mounted token file; S3 access/secret key file changes require restarting API and worker processes because the S3 client captures credentials at startup.
 - The queue is at-least-once. Use destination-side idempotency/unique keys and verify retry/expired-lease recovery behavior.
-- Backups, KMS/object-store plugins, live connector TLS chains, and multi-host recovery must be exercised in a staging deployment; local unit tests do not certify cloud-provider behavior.
+- Backups, Vault key retention/restore, object-store encryption and recovery, live connector TLS chains, and multi-host recovery must be exercised in a staging deployment; local unit tests do not certify external-service behavior.

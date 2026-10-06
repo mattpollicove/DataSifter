@@ -1,10 +1,10 @@
 # Provider adapter contracts
 
-DataSifter keeps cloud services behind two Java Service Provider Interface (SPI) contracts. The repository ships local development implementations only; it does not ship or claim a production KMS or object-storage integration.
+DataSifter keeps provider integrations behind two Java Service Provider Interface (SPI) contracts. The backend includes local development implementations, a HashiCorp Vault Transit key provider, and an S3-compatible shared file store. Other implementations can be added as deployment plugins.
 
 ## Managed vault keys
 
-Implement `com.datasifter.support.VaultKeyProvider` and include the implementation JAR in `DATASIFTER_PLUGIN_DIRECTORY`. Register the implementation class in:
+To add a different key provider, implement `com.datasifter.support.VaultKeyProvider` and include the implementation JAR in `DATASIFTER_PLUGIN_DIRECTORY`. Register the implementation class in:
 
 ```text
 META-INF/services/com.datasifter.support.VaultKeyProvider
@@ -24,7 +24,7 @@ The versioned `v3` payload uses AES-256-GCM with a fresh data key per secret and
 
 ## Shared workflow storage
 
-Implement `com.datasifter.support.WorkflowFileStore` and register it in:
+To add a different object store, implement `com.datasifter.support.WorkflowFileStore` and register it in:
 
 ```text
 META-INF/services/com.datasifter.support.WorkflowFileStore
@@ -47,7 +47,7 @@ Switching existing workflows from `local:` references to another provider is not
 
 Compile provider implementations against the backend's SPI types and the provider vendor's supported client SDK. Package provider libraries in the plugin JAR as required by `ServiceLoader`, mount their directory read-only at `/opt/datasifter/plugins` in both API and worker containers, and set provider IDs in deployment configuration. Test provider identity, permission denial, transient network failures, key rotation with old ciphertext, object streaming, and backup restoration before promoting a release.
 
-The SPI is a deployment extension point, not a complete vendor integration. Production remains blocked until actual provider plugins are selected, installed, and validated.
+The production Compose stack selects built-in HashiCorp Vault Transit and S3-compatible implementations. The SPI remains available for replacing them with other providers. Production still requires provisioning the external Vault and object-store services, configuring least-privilege credentials, and validating TLS, backups, and recovery.
 
 ## Connector transport requirements
 

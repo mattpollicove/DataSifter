@@ -55,7 +55,7 @@ public class WorkflowCsvController {
         String previousReference = workflow.getSourceCsvPath();
         String inputReference = null;
         try (var stream = file.getInputStream()) {
-            inputReference = fileStore.store(stream, originalName);
+            inputReference = fileStore.store(stream, originalName, file.getSize());
             workflow.setSourceCsvPath(inputReference);
             workflowService.updateWorkflow(id, workflow);
         } catch (IOException | RuntimeException e) {

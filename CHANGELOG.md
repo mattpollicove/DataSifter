@@ -3,6 +3,8 @@
 ## Unreleased
 
 ### Added
+- Added built-in HashiCorp Vault Transit envelope-key wrapping and S3-compatible workflow-file storage providers, configured for production Compose with Docker secret files.
+- Added provider configuration checks requiring verified HTTPS endpoints, least-privilege credentials, bucket readiness, and bounded-length streaming uploads.
 - Added environment-configured role-based HTTP Basic authentication, CSRF protection for browser mutations, and administrator/auditor access boundaries.
 - Added PBKDF2-derived versioned AES-GCM vault encryption, strict decryption errors, legacy ciphertext migration, and explicit passphrase rotation.
 - Added persisted CSV/JDBC/LDAPS source configuration, JDBC target configuration, and field transformations for trim/lowercase/uppercase.
@@ -55,6 +57,6 @@
 - Added missing project documentation artifacts: `pastissues.md`, `PROMPT_LOG.md`, and `Docs/APP_CHANGES_FOR_MIGRATION.md`.
 
 ### Notes
-- The provider interfaces, separate worker deployment, and production configuration gates are implemented, but no vendor-specific KMS or shared object-store plugin is included; installing and validating those plugins remains a production release blocker.
+- Production provider adapters target HashiCorp Vault Transit and an S3-compatible object store (such as MinIO). The external Vault and S3 services, keys, bucket policies, TLS trust chains, and staging recovery validation must still be provisioned and verified by the deployment owner.
 - Phase 1 processing now covers CSV, JDBC, and LDAPS into JDBC. SaaS/API connectors, rate limiting, scripting, success/failure gates, 1:many expansion, many:1 aggregation, nested JSON mapping, conflict resolution, and AI-assisted configuration remain future work.
 - All changes remain written to support Linux, macOS, and Windows portability, consistent with the project rules.
